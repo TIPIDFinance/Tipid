@@ -1281,7 +1281,7 @@ function localAnswer(q){
   return 'For '+periodLabel(S.period,c.R)+': income '+money(s.income)+', expenses '+money(s.expenses)+', saved '+money(s.saved)+', so '+money(s.available)+' is available.';
 }
 function aiAnswer(q,hist){
-  var ctl=new AbortController(),t=setTimeout(function(){ctl.abort()},20000);
+  var ctl=new AbortController(),t=setTimeout(function(){ctl.abort()},45000);
   return fetch(PIGGY_API,{method:'POST',headers:{'Content-Type':'application/json'},signal:ctl.signal,
     body:JSON.stringify({question:q,history:hist,facts:factsText(),currency:P.currency||'PHP'})})
   .then(function(r){clearTimeout(t);if(!r.ok)throw new Error('bad');return r.json()})
