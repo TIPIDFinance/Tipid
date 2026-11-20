@@ -314,6 +314,21 @@ textarea.in{resize:vertical}
 @keyframes tpulse{50%{box-shadow:0 0 0 10px rgba(141,220,176,.12)}}
 @media(max-width:520px){.tour-piggy{width:72px;height:58px}}
 @media (prefers-reduced-motion: reduce){.tour-piggy,#tourLayer .tring,.tour-box{animation:none}.tour{transition:none}}
+/* Piggy never blocks buttons: she can shrink, be dragged, and moves away on her own */
+.tour{width:min(440px,calc(100vw - 24px))}
+.tour-box{max-height:calc(100vh - 24px);max-height:calc(100dvh - 24px);overflow:auto}
+.tour-who{display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:grab;touch-action:none}
+.tour-min{flex:none;width:36px;height:36px;border:0;border-radius:50%;background:var(--panel);color:var(--ink);font-size:22px;line-height:1;cursor:pointer;touch-action:auto}
+.tour-min:hover{background:var(--panel-2)}
+.tour-piggy{cursor:grab;touch-action:none}
+.tour.drag{transition:none}
+.tour.drag .tour-piggy,.tour.drag .tour-who{cursor:grabbing}
+.tour-tap{display:none;align-self:center;padding:6px 12px;border:0;border-radius:999px;background:var(--btn);color:var(--btn-ink);font-weight:600;font-size:13px;box-shadow:var(--shadow);cursor:pointer}
+.tour.mini{width:auto}
+.tour.mini .tour-box{display:none}
+.tour.mini .tour-piggy{width:64px;height:52px;cursor:pointer;touch-action:auto}
+.tour.mini .tour-tap{display:inline-block}
+@media(max-height:520px){.tour-piggy{width:60px;height:48px}.tour-box p{font-size:14px;margin-bottom:8px}}
 
 /* ===== Christmas theme (remove class="xmas" from <body> to turn it all off) ===== */
 body.xmas{
@@ -1432,24 +1447,39 @@ function oink(){
     o.connect(f);f.connect(g);g.connect(c.destination);o.start(t);o.stop(t+.3);
   }catch(e){}
 }
-function say(text){
-  if(!snd.v||!('speechSynthesis' in window)||!text) return;
+/* say(text, {queue:true} to wait for her current line instead of cutting it off, done:fn called when she finishes — or at once if she is muted) */
+function say(text,opt){
+  opt=opt||{};
+  var done=typeof opt.done==='function'?opt.done:null,fired=false,tm=0;
+  function fin(){if(fired) return;fired=true;clearTimeout(tm);if(done) done()}
+  if(!snd.v||!('speechSynthesis' in window)||!text){if(done) setTimeout(fin,0);return}
   try{
-    speechSynthesis.cancel();
+    if(!opt.queue) speechSynthesis.cancel();
     var clean=String(text).replace(/₱/g,'pesos ').replace(/\s+/g,' ').trim();
-    var parts=clean.match(/[^.!?]+[.!?]*/g)||[clean];
-    oink();
-    parts.forEach(function(part,i){
+    var parts=clean.match(/[^.!?]+[.!?]*/g)||[clean],last=null;
+    if(!(opt.queue&&(speechSynthesis.speaking||speechSynthesis.pending))) oink();
+    parts.forEach(function(part){
       part=part.trim();if(!part) return;
       var u=new SpeechSynthesisUtterance(part);
       if(snd.voice){u.voice=snd.voice;u.lang=snd.voice.lang}else u.lang='en-US';
       var excited=/!\s*$/.test(part),ask=/\?\s*$/.test(part);
-      u.pitch=Math.min(2,(excited||ask?1.95:1.8)+Math.random()*.05); /* 2 is the browser max */
-      u.rate=excited?1.18:ask?1.12:1.08; /* quick and bouncy, like a kid */
-      u.volume=1;
+      u.pitch=Math.min(2,(excited||ask?1.95:1.8)+Math.random()*.05);
+      u.rate=excited?1.18:ask?1.12:1.08;
+      u.volume=1;last=u;
       speechSynthesis.speak(u);
     });
-  }catch(e){}
+    if(last){last.onend=fin;last.onerror=fin}
+    tm=setTimeout(fin,4000+clean.length*110); /* safety net: some browsers never fire onend */
+    if(!last) fin();
+  }catch(e){fin()}
+}
+/* run cb once Piggy has stopped talking (immediately if she is muted or quiet) */
+function whenQuiet(cb){
+  var n=0;
+  (function chk(){
+    var busy=snd.v&&('speechSynthesis' in window)&&(speechSynthesis.speaking||speechSynthesis.pending);
+    if(!busy||n++>80) cb();else setTimeout(chk,200);
+  })();
 }
 /* Called straight from the Login / Sign Up tap (a real user gesture) so music + voice can start the moment login finishes. */
 function sndUnlock(){
@@ -1558,16 +1588,17 @@ function tourRender(){
   var changed=box.getAttribute('data-sig')!==sig;
   if(changed){
     box.innerHTML='<svg class="tour-piggy" viewBox="0 0 160 130" aria-hidden="true"><use href="#piggy"/></svg>'
-     +'<div class="tour-box"><div class="tour-who">Piggy</div><p>'+esc(tour.confirm?'Wait, are you sure you want to skip? I won\'t be able to show you around. You can always replay me later in Profile & account settings.':tg.fb?'The menu closed. Tap it to open it again.':st.d)+'</p><p class="tour-warn" hidden>Not yet! Please follow my steps first, or tap Skip.</p>'
+     +'<div class="tour-box"><div class="tour-who">Piggy<button type="button" class="tour-min" aria-label="Shrink Piggy so she does not block the screen">&minus;</button></div><p>'+esc(tour.confirm?'Wait, are you sure you want to skip? I won\'t be able to show you around. You can always replay me later in Profile & account settings.':tg.fb?'The menu closed. Tap it to open it again.':st.d)+'</p><p class="tour-warn" hidden>Not yet! Please follow my steps first, or tap Skip.</p>'
      +'<div class="tour-foot"><span class="tour-count">Step '+(tour.i+1)+' of '+TOUR.length+'</span>'
      +(tour.confirm?'<button class="btn ghost sm" data-act="tour-skipyes">Yes, skip</button><button class="btn sm" data-act="tour-skipno">Keep going</button>'
      :(last?'':'<button class="btn ghost sm" data-act="tour-skip" aria-label="Skip tutorial">Skip</button>')
-     +(st.next&&!tg.fb?'<button class="btn sm" data-act="tour-next">'+esc(st.next)+'</button>':''))+'</div></div>';
+     +(st.next&&!tg.fb?'<button class="btn sm" data-act="tour-next">'+esc(st.next)+'</button>':''))+'</div></div><button type="button" class="tour-tap">Tap me</button>';
     box.setAttribute('data-sig',sig);
+    tour.min=false;tour.userOpen=!!tour.confirm;tour.drag=null;
     var tp=box.querySelector('.tour-box p');if(tp) say(tp.textContent);
   }
   box.hidden=false;lay.hidden=false;
-  tour.el=tg.el;
+  tour.el=tg.el;tour.fb=tg.fb;
   if(changed&&tg.el){var r=tg.el.getBoundingClientRect();if(r.top<0||r.bottom>window.innerHeight) tg.el.scrollIntoView({block:'center'})}
   tourPlace();
 }
@@ -1582,19 +1613,62 @@ function tourPlace(){
     set(ch[0],0,0,vw,T);set(ch[1],0,B,vw,vh-B);set(ch[2],0,T,L,B-T);set(ch[3],R,T,vw-R,B-T);
     set(ch[4],L,T,R-L,B-T);ch[4].style.display='';
   }else{set(ch[0],0,0,vw,vh);set(ch[1],0,0,0,0);set(ch[2],0,0,0,0);set(ch[3],0,0,0,0);ch[4].style.display='none'}
-  var bw=box.offsetWidth,bh=box.offsetHeight,g=14,m=12,left,top;
+  var g=14,m=12;
   var clamp=function(v,lo,hi){return Math.min(Math.max(v,lo),Math.max(lo,hi))};
-  if(!has){left=(vw-bw)/2;top=(vh-bh)/2}
-  else{
-    var order=[st.pos||'below','below','above','right','left'],placed=false;
-    for(var i=0;i<order.length&&!placed;i++){
-      var p=order[i];
-      if(p==='below'&&B+g+bh<=vh-m){top=B+g;left=clamp(L,m,vw-bw-m);placed=true}
-      else if(p==='above'&&T-g-bh>=m){top=T-g-bh;left=clamp(R-bw,m,vw-bw-m);placed=true}
-      else if(p==='right'&&R+g+bw<=vw-m){left=R+g;top=clamp(T,m,vh-bh-m);placed=true}
-      else if(p==='left'&&L-g-bw>=m){left=L-g-bw;top=clamp(B-bh,m,vh-bh-m);placed=true}
+  function rc(l,t,w,h){return {l:l,t:t,r:l+w,b:t+h}}
+  function ov(a,b){return Math.max(0,Math.min(a.r,b.r)-Math.max(a.l,b.l))*Math.max(0,Math.min(a.b,b.b)-Math.max(a.t,b.t))}
+  /* If this step needs a tap on the highlighted spot, Piggy must stay off every button, field and link in it. */
+  var needFree=has&&(!st.next||tour.fb),obs=[],spot=has?{l:L,t:T,r:R,b:B}:null;
+  if(needFree){
+    var q='button,a[href],input,select,textarea,[role="button"],label',list=[];
+    try{if(el.matches(q)) list.push(el);[].forEach.call(el.querySelectorAll(q),function(x){list.push(x)})}catch(e){}
+    if(!list.length) list.push(el);
+    list.forEach(function(x){
+      if(!x.getClientRects().length) return;
+      var rr=x.getBoundingClientRect();if(rr.width<1||rr.height<1) return;
+      obs.push({l:rr.left-8,t:rr.top-8,r:rr.right+8,b:rr.bottom+8});
+    });
+    if(!obs.length) obs.push(spot);
+  }
+  function cands(bw,bh,corners){
+    var out=[],order=[st.pos||'below','below','above','right','left'];
+    order.forEach(function(p){
+      if(p==='below'&&B+g+bh<=vh-m) out.push([clamp(L,m,vw-bw-m),B+g]);
+      else if(p==='above'&&T-g-bh>=m) out.push([clamp(R-bw,m,vw-bw-m),T-g-bh]);
+      else if(p==='right'&&R+g+bw<=vw-m) out.push([R+g,clamp(T,m,vh-bh-m)]);
+      else if(p==='left'&&L-g-bw>=m) out.push([L-g-bw,clamp(B-bh,m,vh-bh-m)]);
+    });
+    if(corners) out.push([m,m],[vw-bw-m,m],[m,vh-bh-m],[vw-bw-m,vh-bh-m]);
+    return out;
+  }
+  function best(bw,bh){
+    var cs=cands(bw,bh,true),pick=cs[0],pk=null;
+    cs.forEach(function(c){
+      var b=rc(c[0],c[1],bw,bh),o=0,t=0;
+      obs.forEach(function(x){o+=ov(b,x)});if(spot) t=ov(b,spot);
+      var key=o*1e6+t;if(pk===null||key<pk){pk=key;pick=c}
+    });
+    return {pos:pick,free:pk!==null&&pk<1e6};
+  }
+  var wantMini=!!tour.min;
+  box.classList.toggle('mini',wantMini);
+  var bw=box.offsetWidth,bh=box.offsetHeight,left,top;
+  if(!has){
+    if(wantMini){left=vw-bw-m;top=vh-bh-m}else{left=(vw-bw)/2;top=(vh-bh)/2}
+  }else if(!needFree){
+    var cs0=cands(bw,bh,false);
+    if(tour.drag&&!wantMini){left=tour.drag.l;top=tour.drag.t}
+    else if(cs0.length){left=cs0[0][0];top=cs0[0][1]}
+    else{left=(vw-bw)/2;top=(vh-B>=T)?vh-bh-m:m}
+  }else if(tour.drag&&!wantMini){
+    left=tour.drag.l;top=tour.drag.t;
+  }else{
+    var r1=best(bw,bh);
+    /* no clear spot at full size: shrink to a small Piggy in the safest corner (tap her to read again) */
+    if(!r1.free&&!wantMini&&!tour.userOpen){
+      box.classList.add('mini');bw=box.offsetWidth;bh=box.offsetHeight;r1=best(bw,bh);
     }
-    if(!placed){left=(vw-bw)/2;top=(vh-B>=T)?vh-bh-m:m}
+    left=r1.pos[0];top=r1.pos[1];
   }
   box.style.left=clamp(left,m,vw-bw-m)+'px';box.style.top=clamp(top,m,vh-bh-m)+'px';
 }
@@ -1615,6 +1689,30 @@ document.addEventListener('click',function(e){if(tour.on&&!tourAllowed(e.target)
 document.addEventListener('keydown',function(e){if(tour.on&&(e.key==='Enter'||e.key===' ')&&!tourAllowed(e.target)){e.preventDefault();e.stopPropagation()}},true);
 window.addEventListener('resize',tourPlace);
 window.addEventListener('scroll',tourPlace,{passive:true});
+window.addEventListener('orientationchange',function(){setTimeout(tourPlace,250)});
+if(window.visualViewport) window.visualViewport.addEventListener('resize',tourPlace);
+document.addEventListener('click',function(e){
+  if(!tour.on) return;
+  var t=e.target.closest&&e.target.closest('.tour-min,.tour-piggy,.tour-tap'),box=$('tour');
+  if(!t||!box.contains(t)) return;
+  if(t.classList.contains('tour-min')){tour.min=true;tour.userOpen=false;tourPlace()}
+  else if(box.classList.contains('mini')){tour.min=false;tour.userOpen=true;tour.drag=null;tourPlace()}
+});
+/* drag Piggy anywhere by her picture or her name */
+var tourDr=null;
+document.addEventListener('pointerdown',function(e){
+  if(!tour.on) return;
+  var box=$('tour'),h=e.target.closest&&e.target.closest('.tour-piggy,.tour-who');
+  if(!h||!box.contains(h)||box.classList.contains('mini')||e.target.closest('.tour-min')) return;
+  var b=box.getBoundingClientRect();tourDr={x:e.clientX-b.left,y:e.clientY-b.top};box.classList.add('drag');e.preventDefault();
+},true);
+document.addEventListener('pointermove',function(e){
+  if(!tourDr) return;
+  var box=$('tour'),l=Math.min(Math.max(e.clientX-tourDr.x,6),Math.max(6,window.innerWidth-box.offsetWidth-6)),t=Math.min(Math.max(e.clientY-tourDr.y,6),Math.max(6,window.innerHeight-box.offsetHeight-6));
+  tour.drag={l:l,t:t};box.style.left=l+'px';box.style.top=t+'px';
+});
+function tourDrEnd(){if(!tourDr) return;tourDr=null;$('tour').classList.remove('drag')}
+document.addEventListener('pointerup',tourDrEnd);document.addEventListener('pointercancel',tourDrEnd);
 
 /* ---------- QR code on the landing page ---------- */
 /* Minimal QR encoder: byte mode, error correction level M, versions 1-9. Returns array of rows (true = dark) or null if text is too long. */
@@ -2026,20 +2124,27 @@ function refreshTip(){
 }
 function addMsg(role,text,local){
   var m={role:role,text:text,local:!!local};S.chat.msgs.push(m);
-  if(role==='assistant'&&text!=='...'&&text!=='Thinking...') say(text);
+  if(role==='assistant'&&text!=='...'&&text!=='Thinking...') say(text,{queue:true});
+  else if(role==='user'){try{speechSynthesis.cancel()}catch(e){}}
   var el=document.createElement('div');el.className='msg '+(role==='user'?'user':'bot');el.textContent=text;
   var log=$('chatLog');log.appendChild(el);log.scrollTop=log.scrollHeight;m.el=el;return m;
 }
 function greet(){renderChips()}
 function piggyIntro(){
   var lines=['Oink! Hi, I\'m Piggy, your budget buddy here in Tipid.',
-    'I\'m a girl pig with a big job: I look after your numbers so you don\'t have to stress about them.',
     hasIncome()?'Ask me if you can afford something, where your money went, or how to save more. I answer from your own numbers.':'Add your income first, then ask me if you can afford something or where your money went. I\'ll plan around it.'];
   var log=$('chatLog'),i=0;$('chatChips').innerHTML='';
   (function next(){
     if(!P||i>=lines.length){renderChips();return}
-    var m=addMsg('assistant','...',true);
-    setTimeout(function(){m.text=lines[i];m.el.textContent=lines[i];say(lines[i]);log.scrollTop=log.scrollHeight;i++;setTimeout(next,350)},800);
+    whenQuiet(function(){ /* let any earlier line (like the tutorial's) finish first */
+      if(!P) return;
+      var m=addMsg('assistant','...',true);
+      setTimeout(function(){
+        var line=lines[i++];
+        m.text=line;m.el.textContent=line;log.scrollTop=log.scrollHeight;
+        say(line,{queue:true,done:function(){setTimeout(next,350)}}); /* next bubble only after she finishes */
+      },700);
+    });
   })();
 }
 function renderChips(){
@@ -2148,7 +2253,7 @@ function ask(q){
   S.chat.busy=true;
   var wait=addMsg('assistant','Thinking...',true);
   aiAnswer(q,hist).then(function(a){return a},function(){return localAnswer(q)}).then(function(a){
-    wait.text=a;wait.local=false;if(wait.el)wait.el.textContent=a;say(a);
+    wait.text=a;wait.local=false;if(wait.el)wait.el.textContent=a;say(a,{queue:true});
     S.chat.busy=false;log.scrollTop=log.scrollHeight;
   });
 }
