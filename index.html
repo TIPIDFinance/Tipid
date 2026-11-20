@@ -722,6 +722,16 @@ function cloudMerge(snap){
 }
 function onUser(u){
   if(cloud.unsub){cloud.unsub();cloud.unsub=null}
+  /* Every visit starts at the Login page, even if this browser is already signed in. */
+  if(!cloud.seen){
+    cloud.seen=true;
+    store.session=null;persistLocal();
+    $('landing').hidden=false;
+    if(u){try{cloud.A.signOut(cloud.auth)}catch(e){}return}
+    cloud.user=null;cloud.state='off';setStatus();
+    openModal(authHTML('login'),'a-email');
+    return;
+  }
   if(!u){
     cloud.user=null;cloud.state='off';
     if(P&&P.email==='demo@tipid.local') return;
@@ -740,7 +750,6 @@ function onUser(u){
   setStatus();
 }
 function initCloud(){
-  if(store.session) $('landing').hidden=true;
   var fall=function(){
     cloud.state='off';setStatus();
     if(store.session&&store.profiles[store.session]) enterApp('dashboard');else $('landing').hidden=false;
