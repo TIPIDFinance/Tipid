@@ -2136,15 +2136,14 @@ function piggyIntro(){
   var log=$('chatLog'),i=0;$('chatChips').innerHTML='';
   (function next(){
     if(!P||i>=lines.length){renderChips();return}
-    whenQuiet(function(){ /* let any earlier line (like the tutorial's) finish first */
+    var m=addMsg('assistant','...',true); /* the chat bubble always shows up first... */
+    setTimeout(function(){
       if(!P) return;
-      var m=addMsg('assistant','...',true);
-      setTimeout(function(){
-        var line=lines[i++];
-        m.text=line;m.el.textContent=line;log.scrollTop=log.scrollHeight;
-        say(line,{queue:true,done:function(){setTimeout(next,350)}}); /* next bubble only after she finishes */
-      },700);
-    });
+      var line=lines[i++];
+      m.text=line;m.el.textContent=line;log.scrollTop=log.scrollHeight;
+      /* ...then her voice follows, after any earlier line has finished */
+      whenQuiet(function(){say(line,{queue:true,done:function(){setTimeout(next,350)}})});
+    },700);
   })();
 }
 function renderChips(){
